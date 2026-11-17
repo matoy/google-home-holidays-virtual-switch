@@ -23,6 +23,13 @@ export interface SmartHomeDeps {
   getOverride?: () => Promise<SwitchOverride | null>;
 }
 
+async function getEffectiveSwitchState(deps?: SmartHomeDeps): Promise<boolean> {
+  const getSnapshot = deps?.getSnapshot ?? (() => getHolidayScheduleSnapshot());
+  const getOverride = deps?.getOverride ?? (() => getSwitchOverride());
+  const [snapshot, override] = await Promise.all([getSnapshot(), getOverride()]);
+  return override ? override.isOn : snapshot.current.isOn;
+}
+
 export async function handleSmartHomeIntent(
   body: SmartHomeRequest,
   deps?: SmartHomeDeps,
@@ -59,7 +66,7 @@ export async function handleSmartHomeIntent(
               willReportState: true,
               attributes: {
                 commandOnlyOnOff: false,
-                queryOnlyOnOff: true,
+                queryOnlyOnOff: false,
               },
               deviceInfo: {
                 manufacturer: "Zone C Calendar Bridge",
@@ -74,10 +81,7 @@ export async function handleSmartHomeIntent(
     }
 
     case "action.devices.QUERY": {
-      const getSnapshot = deps?.getSnapshot ?? (() => getHolidayScheduleSnapshot());
-      const getOverride = deps?.getOverride ?? (() => getSwitchOverride());
-      const [snapshot, override] = await Promise.all([getSnapshot(), getOverride()]);
-      const effectiveIsOn = override ? override.isOn : snapshot.current.isOn;
+      const effectiveIsOn = await getEffectiveSwitchState(deps);
       const requestedDevices = primaryInput.payload?.devices ?? [{ id: config.deviceId }];
       const devicesResponse: Record<string, Record<string, unknown>> = {};
 
@@ -107,22 +111,37 @@ export async function handleSmartHomeIntent(
 
     case "action.devices.EXECUTE": {
       const commandEntries = primaryInput.payload?.commands ?? [];
-      const ids = Array.from(
+      const requestedIds = Array.from(
         new Set(commandEntries.flatMap((cmd) => cmd.devices.map((d) => d.id))),
       );
+      const knownIds = requestedIds.filter((id) => id === config.deviceId);
+      const unknownIds = requestedIds.filter((id) => id !== config.deviceId);
+      const commands: Array<Record<string, unknown>> = [];
+
+      if (knownIds.length > 0) {
+        const effectiveIsOn = await getEffectiveSwitchState(deps);
+        commands.push({
+          ids: knownIds,
+          status: "SUCCESS",
+          states: {
+            online: true,
+            on: effectiveIsOn,
+          },
+        });
+      }
+
+      if (unknownIds.length > 0) {
+        commands.push({
+          ids: unknownIds,
+          status: "ERROR",
+          errorCode: "deviceNotFound",
+        });
+      }
+
       return {
         requestId,
         payload: {
-          commands:
-            ids.length > 0
-              ? [
-                  {
-                    ids,
-                    status: "ERROR",
-                    errorCode: "notSupported",
-                  },
-                ]
-              : [],
+          commands,
         },
       };
     }

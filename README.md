@@ -119,7 +119,7 @@ node -e "const c = require('crypto'); for (const [k, n] of [['GOOGLE_CLIENT_ID',
 
 ### 6. Using the Switch in Google Home Automations
 
-- Because `queryOnlyOnOff` is `true` and `willReportState` is `true`, you can use the switch as a **Starter** (when it turns ON or OFF) or a **Condition** in Google Home Automations / the [Google Home Script Editor](https://home.google.com/).
+- Because `willReportState` is `true` on a standard `SWITCH` (`queryOnlyOnOff: false`), the Google Home mobile tile opens cleanly without crashing and you can use the switch as a **Starter** (when it turns ON or OFF) or a **Condition** in Google Home Automations / the [Google Home Script Editor](https://home.google.com/). Any manual tap on the tile (`EXECUTE`) automatically returns the authoritative Zone C calendar (or test override) state so it stays in sync.
 - **Vercel Hobby Cron timing note:** Vercel Hobby runs `5 0 * * *` (`00:05 UTC`) within a ~1-hour window (`01:05–02:05` CET / `02:05–03:05` CEST). If you want state transitions pushed right at `00:01 Europe/Paris`, configure a free external scheduler (e.g. GitHub Actions or cron-job.org) to `GET https://your-app.vercel.app/api/cron` with header `Authorization: Bearer <CRON_SECRET>`.
 
 ---

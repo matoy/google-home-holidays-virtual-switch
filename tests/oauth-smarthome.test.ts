@@ -125,7 +125,7 @@ test("Smart Home intents SYNC, QUERY, EXECUTE, and DISCONNECT adhere to Google s
   assert.equal(syncRes.payload.devices[0].type, "action.devices.types.SWITCH");
   assert.deepEqual(syncRes.payload.devices[0].traits, ["action.devices.traits.OnOff"]);
   assert.equal(syncRes.payload.devices[0].willReportState, true);
-  assert.equal(syncRes.payload.devices[0].attributes.queryOnlyOnOff, true);
+  assert.equal(syncRes.payload.devices[0].attributes.queryOnlyOnOff, false);
 
   const queryRes = (await handleSmartHomeIntent(
     {
@@ -156,31 +156,45 @@ test("Smart Home intents SYNC, QUERY, EXECUTE, and DISCONNECT adhere to Google s
     errorCode: "deviceNotFound",
   });
 
-  const executeRes = (await handleSmartHomeIntent({
-    requestId: "req-exec",
-    inputs: [
-      {
-        intent: "action.devices.EXECUTE",
-        payload: {
-          commands: [
-            {
-              devices: [{ id: "zone-c-school-holidays" }],
-              execution: [{ command: "action.devices.commands.OnOff", params: { on: false } }],
-            },
-          ],
+  const executeRes = (await handleSmartHomeIntent(
+    {
+      requestId: "req-exec",
+      inputs: [
+        {
+          intent: "action.devices.EXECUTE",
+          payload: {
+            commands: [
+              {
+                devices: [{ id: "zone-c-school-holidays" }],
+                execution: [{ command: "action.devices.commands.OnOff", params: { on: false } }],
+              },
+            ],
+          },
         },
-      },
-    ],
-  })) as {
+      ],
+    },
+    {
+      getSnapshot: async () => evaluateScheduleFromIcs(fakeIcs, { targetDate: "2026-10-20" }),
+    },
+  )) as {
     requestId: string;
-    payload: { commands: Array<{ ids: string[]; status: string; errorCode: string }> };
+    payload: {
+      commands: Array<{
+        ids: string[];
+        status: string;
+        states?: { online: boolean; on: boolean };
+      }>;
+    };
   };
 
   assert.deepEqual(executeRes.payload.commands, [
     {
       ids: ["zone-c-school-holidays"],
-      status: "ERROR",
-      errorCode: "notSupported",
+      status: "SUCCESS",
+      states: {
+        online: true,
+        on: true,
+      },
     },
   ]);
 

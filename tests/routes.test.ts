@@ -181,7 +181,7 @@ test("Full OAuth2 authorize -> token -> refresh -> Smart Home SYNC/QUERY/EXECUTE
     payload: { devices: Array<{ id: string; attributes: { queryOnlyOnOff: boolean } }> };
   };
   assert.equal(syncJson.payload.devices[0].id, "zone-c-school-holidays");
-  assert.equal(syncJson.payload.devices[0].attributes.queryOnlyOnOff, true);
+  assert.equal(syncJson.payload.devices[0].attributes.queryOnlyOnOff, false);
 
   await withMockIcsFetch(async () => {
     const queryRes = await smarthomePost(
