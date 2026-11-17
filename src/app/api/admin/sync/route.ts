@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequestAuthorized } from "@/lib/admin-auth";
 import { getAppConfig } from "@/lib/config";
 import { getHolidayScheduleSnapshot } from "@/lib/holidays";
 import {
@@ -6,7 +7,7 @@ import {
   reportSwitchStateToHomeGraph,
   requestSyncToHomeGraph,
 } from "@/lib/homegraph";
-import { constantTimeEquals } from "@/lib/oauth";
+import { getSwitchOverride } from "@/lib/override";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,8 +25,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
   }
 
-  if (!constantTimeEquals(body.password || "", config.adminPassword)) {
-    return NextResponse.json({ error: "Invalid admin password" }, { status: 401 });
+  if (!isAdminRequestAuthorized(request, body.password)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!isHomeGraphConfigured()) {
@@ -46,14 +47,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, action: "request_sync" });
     }
 
-    const snapshot = await getHolidayScheduleSnapshot({ forceRefresh: true });
-    const { requestId } = await reportSwitchStateToHomeGraph({ isOn: snapshot.current.isOn });
+    const [snapshot, override] = await Promise.all([
+      getHolidayScheduleSnapshot({ forceRefresh: true }),
+      getSwitchOverride(),
+    ]);
+    const effectiveIsOn = override ? override.isOn : snapshot.current.isOn;
+    const { requestId } = await reportSwitchStateToHomeGraph({ isOn: effectiveIsOn });
     return NextResponse.json({
       ok: true,
       action: "report_state",
-      isOn: snapshot.current.isOn,
+      isOn: effectiveIsOn,
+      overridden: Boolean(override),
       date: snapshot.current.date,
-      reasonLabel: snapshot.current.reasonLabel,
+      reasonLabel: override ? "Manual test override" : snapshot.current.reasonLabel,
       requestId,
     });
   } catch (err) {

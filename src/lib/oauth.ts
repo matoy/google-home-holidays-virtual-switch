@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getAppConfig, requireEnvValue } from "./config";
 
-export type OAuthTokenType = "code" | "access" | "refresh";
+export type OAuthTokenType = "code" | "access" | "refresh" | "admin";
 
 export interface OAuthTokenPayload {
   typ: OAuthTokenType;

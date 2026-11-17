@@ -1,5 +1,6 @@
 import { getAppConfig } from "./config";
 import { getHolidayScheduleSnapshot, type HolidayScheduleSnapshot } from "./holidays";
+import { getSwitchOverride, type SwitchOverride } from "./override";
 
 export interface SmartHomeInput {
   intent: string;
@@ -19,6 +20,7 @@ export interface SmartHomeRequest {
 
 export interface SmartHomeDeps {
   getSnapshot?: () => Promise<HolidayScheduleSnapshot>;
+  getOverride?: () => Promise<SwitchOverride | null>;
 }
 
 export async function handleSmartHomeIntent(
@@ -73,7 +75,9 @@ export async function handleSmartHomeIntent(
 
     case "action.devices.QUERY": {
       const getSnapshot = deps?.getSnapshot ?? (() => getHolidayScheduleSnapshot());
-      const snapshot = await getSnapshot();
+      const getOverride = deps?.getOverride ?? (() => getSwitchOverride());
+      const [snapshot, override] = await Promise.all([getSnapshot(), getOverride()]);
+      const effectiveIsOn = override ? override.isOn : snapshot.current.isOn;
       const requestedDevices = primaryInput.payload?.devices ?? [{ id: config.deviceId }];
       const devicesResponse: Record<string, Record<string, unknown>> = {};
 
@@ -82,7 +86,7 @@ export async function handleSmartHomeIntent(
           devicesResponse[dev.id] = {
             online: true,
             status: "SUCCESS",
-            on: snapshot.current.isOn,
+            on: effectiveIsOn,
           };
         } else {
           devicesResponse[dev.id] = {

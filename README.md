@@ -13,13 +13,15 @@ Evaluated in the **`Europe/Paris`** timezone (`00:00` boundary):
 
 ## Endpoints
 
-- `/` — Live switch status dashboard, upcoming Zone C periods, date simulator, and manual HomeGraph sync controls.
+- `/` — Live switch status dashboard, upcoming Zone C periods, date simulator, admin login, test switch override controls, and manual HomeGraph sync controls.
 - `/oauth/authorize` — Single-user OAuth 2.0 authorization page for Google Home account linking.
 - `/api/oauth/token` — OAuth 2.0 token exchange (`authorization_code` and `refresh_token`).
 - `/api/smarthome` — Google Home Cloud-to-cloud Fulfillment (`SYNC`, `QUERY`, `EXECUTE`, `DISCONNECT`).
-- `/api/cron` — Scheduled daily check (`5 0 * * *` UTC in `vercel.json`) that calls HomeGraph `reportStateAndNotification` whenever the state transitions day-over-day (or with `?force=1`).
+- `/api/cron` — Scheduled daily check (`5 0 * * *` UTC in `vercel.json`) that clears any temporary test override and calls HomeGraph `reportStateAndNotification` whenever the state transitions.
 - `/api/status` — Public JSON status (`?date=YYYY-MM-DD` optional).
-- `/api/admin/sync` — Admin endpoint (`ADMIN_PASSWORD`) to trigger `report_state` or `request_sync` on demand.
+- `/api/admin/login`, `/api/admin/logout` — `ADMIN_PASSWORD` session cookie login/logout for the dashboard.
+- `/api/admin/switch` — Authenticated endpoint to force the virtual switch `on`, `off`, or reset back to `auto` (Zone C calendar) and push the state to HomeGraph.
+- `/api/admin/sync` — Authenticated endpoint to trigger `report_state` or `request_sync` on demand.
 
 ---
 
@@ -112,7 +114,8 @@ node -e "const c = require('crypto'); for (const [k, n] of [['GOOGLE_CLIENT_ID',
 1. On your phone, open **Google Home** (signed in with the same Google account that owns the Developer Console project).
 2. Tap **Devices → + Add → Works with Google Home**.
 3. Search for `[test] <Your Integration Name>`, enter your `ADMIN_PASSWORD` on the `/oauth/authorize` screen, and approve.
-4. Return to `https://your-app.vercel.app/`, enter `ADMIN_PASSWORD` in **Google HomeGraph Control**, and click **Report State Now** to seed the initial state in HomeGraph.
+4. Return to `https://your-app.vercel.app/`, sign in under **Admin & Google Home Control** with `ADMIN_PASSWORD`, and click **Report State Now** to seed the initial state in HomeGraph.
+5. *(Optional testing)* While signed in, you can use **Force ON** / **Force OFF** to temporarily override the switch and verify the state updates in the Google Home app (and test Automations), then click **Reset to Calendar (Auto)**. Overrides also auto-expire after 12 hours or when `/api/cron` runs. *(On Vercel, if you want `QUERY` intents on fresh cold-started instances to see test overrides too, optionally configure `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` or `KV_REST_API_URL` + `KV_REST_API_TOKEN`.)*
 
 ### 6. Using the Switch in Google Home Automations
 

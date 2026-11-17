@@ -3,6 +3,7 @@ import { getAppConfig } from "@/lib/config";
 import { getHolidayScheduleSnapshot } from "@/lib/holidays";
 import { isHomeGraphConfigured, reportSwitchStateToHomeGraph } from "@/lib/homegraph";
 import { constantTimeEquals } from "@/lib/oauth";
+import { clearSwitchOverride } from "@/lib/override";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,8 +26,15 @@ async function handleCron(request: NextRequest) {
   const forceParam = request.nextUrl.searchParams.get("force");
   const force = forceParam === "1" || forceParam === "true";
 
-  const snapshot = await getHolidayScheduleSnapshot({ forceRefresh: true });
-  const changed = snapshot.current.isOn !== snapshot.yesterday.isOn;
+  const [snapshot, clearedOverride] = await Promise.all([
+    getHolidayScheduleSnapshot({ forceRefresh: true }),
+    clearSwitchOverride(),
+  ]);
+
+  const changedFromYesterday = snapshot.current.isOn !== snapshot.yesterday.isOn;
+  const changedFromOverride =
+    clearedOverride !== null && clearedOverride.isOn !== snapshot.current.isOn;
+  const changed = changedFromYesterday || changedFromOverride;
   const homeGraphReady = isHomeGraphConfigured();
 
   let reported = false;
@@ -48,6 +56,7 @@ async function handleCron(request: NextRequest) {
             isOn: snapshot.current.isOn,
             yesterdayIsOn: snapshot.yesterday.isOn,
             changed,
+            overrideCleared: clearedOverride !== null,
             force,
             reported: false,
             homeGraphConfigured: true,
@@ -71,6 +80,7 @@ async function handleCron(request: NextRequest) {
       reasonLabel: snapshot.current.reasonLabel,
       yesterdayIsOn: snapshot.yesterday.isOn,
       changed,
+      overrideCleared: clearedOverride !== null,
       force,
       homeGraphConfigured: homeGraphReady,
       reported,

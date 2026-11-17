@@ -1,8 +1,11 @@
+import { cookies } from "next/headers";
 import { AdminSyncPanel } from "@/components/AdminSyncPanel";
+import { ADMIN_SESSION_COOKIE, verifyAdminSessionToken } from "@/lib/admin-auth";
 import { getAppConfig } from "@/lib/config";
 import { addDaysYmd, compareYmd, formatHumanDate } from "@/lib/date";
 import { getHolidayScheduleSnapshot } from "@/lib/holidays";
 import { getHomeGraphConfigStatus } from "@/lib/homegraph";
+import { getSwitchOverride, isSharedOverrideStoreConfigured } from "@/lib/override";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +14,11 @@ export default async function HomePage() {
   const config = getAppConfig();
   const homeGraphStatus = getHomeGraphConfigStatus();
   const homeGraphConfigured = homeGraphStatus.configured;
+  const cookieStore = await cookies();
+  const isAdminAuthenticated = verifyAdminSessionToken(
+    cookieStore.get(ADMIN_SESSION_COOKIE)?.value,
+  );
+  const sharedStoreConfigured = isSharedOverrideStoreConfigured();
 
   let snapshot: Awaited<ReturnType<typeof getHolidayScheduleSnapshot>> | null = null;
   let loadError: string | null = null;
@@ -20,6 +28,9 @@ export default async function HomePage() {
   } catch (err) {
     loadError = err instanceof Error ? err.message : "Failed to load Zone-C calendar";
   }
+
+  const activeOverride = snapshot ? await getSwitchOverride() : null;
+  const effectiveIsOn = snapshot ? (activeOverride ? activeOverride.isOn : snapshot.current.isOn) : false;
 
   const upcomingPeriods = snapshot
     ? snapshot.periods.filter((p) => compareYmd(p.endDate, snapshot.parisNow.date) > 0)
@@ -62,12 +73,19 @@ export default async function HomePage() {
                   {snapshot.parisNow.time} Paris)
                 </div>
                 <div style={{ fontSize: "1.15rem", fontWeight: 600 }}>
-                  {snapshot.current.reasonLabel}
+                  {activeOverride
+                    ? `Manual test override active (Calendar: ${snapshot.current.isOn ? "ON" : "OFF"} — ${snapshot.current.reasonLabel})`
+                    : snapshot.current.reasonLabel}
                 </div>
               </div>
-              <span className={`pill ${snapshot.current.isOn ? "pill-on" : "pill-off"}`}>
-                Switch is {snapshot.current.isOn ? "ON" : "OFF"}
-              </span>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                {activeOverride && (
+                  <span className="pill pill-sm pill-warn">Test Override</span>
+                )}
+                <span className={`pill ${effectiveIsOn ? "pill-on" : "pill-off"}`}>
+                  Switch is {effectiveIsOn ? "ON" : "OFF"}
+                </span>
+              </div>
             </div>
 
             <div className="meta-list" style={{ marginTop: "1.1rem" }}>
@@ -102,6 +120,10 @@ export default async function HomePage() {
             initialDate={snapshot.parisNow.date}
             homeGraphConfigured={homeGraphConfigured}
             homeGraphError={homeGraphStatus.error}
+            initialAuthenticated={isAdminAuthenticated}
+            initialOverride={activeOverride}
+            calendarIsOn={snapshot.current.isOn}
+            sharedStoreConfigured={sharedStoreConfigured}
           />
 
           <section className="card">

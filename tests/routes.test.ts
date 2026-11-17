@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { NextRequest } from "next/server";
+import { POST as adminLoginPost } from "../src/app/api/admin/login/route";
+import { POST as adminLogoutPost } from "../src/app/api/admin/logout/route";
+import { POST as adminSwitchPost } from "../src/app/api/admin/switch/route";
 import { POST as adminSyncPost } from "../src/app/api/admin/sync/route";
 import { GET as cronGet } from "../src/app/api/cron/route";
 import { POST as authorizePost } from "../src/app/api/oauth/authorize/route";
 import { POST as tokenPost } from "../src/app/api/oauth/token/route";
 import { POST as smarthomePost } from "../src/app/api/smarthome/route";
 import { GET as statusGet } from "../src/app/api/status/route";
+import { ADMIN_SESSION_COOKIE } from "../src/lib/admin-auth";
 import { resetIcsCacheForTests } from "../src/lib/holidays";
+import { createAccessAndRefreshTokens } from "../src/lib/oauth";
+import { resetMemoryOverridesForTests } from "../src/lib/override";
 
 const FIXTURE_ICS = [
   "BEGIN:VCALENDAR",
@@ -262,4 +268,152 @@ test("Status, Cron, and Admin routes validate inputs and auth", async () => {
     }),
   );
   assert.equal(adminNoHg.status, 400);
+});
+
+test("Admin session cookie auth and switch test override affect Smart Home QUERY and reset on Cron", async () => {
+  setupTestEnv();
+  resetMemoryOverridesForTests();
+
+  // 1. Unauthenticated /api/admin/switch fails with 401
+  const unauthSwitch = await adminSwitchPost(
+    new NextRequest("https://app.example.com/api/admin/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "on" }),
+    }),
+  );
+  assert.equal(unauthSwitch.status, 401);
+
+  // 2. Bad login fails with 401
+  const badLogin = await adminLoginPost(
+    new NextRequest("https://app.example.com/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "wrong" }),
+    }),
+  );
+  assert.equal(badLogin.status, 401);
+
+  // 3. Valid login sets signed HttpOnly cookie
+  const goodLogin = await adminLoginPost(
+    new NextRequest("https://app.example.com/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "route-admin-password" }),
+    }),
+  );
+  assert.equal(goodLogin.status, 200);
+  const sessionCookie = goodLogin.cookies.get(ADMIN_SESSION_COOKIE)?.value;
+  assert.ok(sessionCookie);
+
+  const { access_token } = createAccessAndRefreshTokens({
+    clientId: "route-client-id",
+    agentUserId: "zone-c-user-1",
+    includeRefreshToken: false,
+  });
+
+  await withMockIcsFetch(async () => {
+    // 4. Force ON using session cookie
+    const forceOnRes = await adminSwitchPost(
+      new NextRequest("https://app.example.com/api/admin/switch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${ADMIN_SESSION_COOKIE}=${sessionCookie}`,
+        },
+        body: JSON.stringify({ mode: "on" }),
+      }),
+    );
+    assert.equal(forceOnRes.status, 200);
+    const forceOnJson = (await forceOnRes.json()) as { isOn: boolean; override: { isOn: boolean } };
+    assert.equal(forceOnJson.isOn, true);
+    assert.equal(forceOnJson.override.isOn, true);
+
+    // 5. Smart Home QUERY reflects override ON
+    const queryOnRes = await smarthomePost(
+      new NextRequest("https://app.example.com/api/smarthome", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: "req-ovr-on",
+          inputs: [
+            {
+              intent: "action.devices.QUERY",
+              payload: { devices: [{ id: "zone-c-school-holidays" }] },
+            },
+          ],
+        }),
+      }),
+    );
+    const queryOnJson = (await queryOnRes.json()) as {
+      payload: { devices: Record<string, { on: boolean }> };
+    };
+    assert.equal(queryOnJson.payload.devices["zone-c-school-holidays"].on, true);
+
+    // 6. Status endpoint exposes effectiveIsOn and override
+    const statusRes = await statusGet(new NextRequest("https://app.example.com/api/status"));
+    const statusJson = (await statusRes.json()) as {
+      effectiveIsOn: boolean;
+      override: { isOn: boolean } | null;
+    };
+    assert.equal(statusJson.effectiveIsOn, true);
+    assert.equal(statusJson.override?.isOn, true);
+
+    // 7. Force OFF using session cookie
+    const forceOffRes = await adminSwitchPost(
+      new NextRequest("https://app.example.com/api/admin/switch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${ADMIN_SESSION_COOKIE}=${sessionCookie}`,
+        },
+        body: JSON.stringify({ mode: "off" }),
+      }),
+    );
+    assert.equal(forceOffRes.status, 200);
+
+    // 8. Reset to auto mode
+    const autoRes = await adminSwitchPost(
+      new NextRequest("https://app.example.com/api/admin/switch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${ADMIN_SESSION_COOKIE}=${sessionCookie}`,
+        },
+        body: JSON.stringify({ mode: "auto" }),
+      }),
+    );
+    assert.equal(autoRes.status, 200);
+    const autoJson = (await autoRes.json()) as { mode: string; override: unknown };
+    assert.equal(autoJson.mode, "auto");
+    assert.equal(autoJson.override, null);
+
+    // 9. Force ON again, then Cron clears override and marks changed if calendar differs
+    await adminSwitchPost(
+      new NextRequest("https://app.example.com/api/admin/switch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `${ADMIN_SESSION_COOKIE}=${sessionCookie}`,
+        },
+        body: JSON.stringify({ mode: "on" }),
+      }),
+    );
+    const cronRes = await cronGet(
+      new NextRequest("https://app.example.com/api/cron", {
+        headers: { Authorization: "Bearer route-cron-secret-1234" },
+      }),
+    );
+    const cronJson = (await cronRes.json()) as { overrideCleared: boolean };
+    assert.equal(cronJson.overrideCleared, true);
+  });
+
+  // 10. Logout clears cookie
+  const logoutRes = await adminLogoutPost();
+  assert.equal(logoutRes.status, 200);
+  assert.equal(logoutRes.cookies.get(ADMIN_SESSION_COOKIE)?.value, "");
+  resetMemoryOverridesForTests();
 });
