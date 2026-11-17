@@ -11,9 +11,14 @@ interface DateCheckResult {
 interface AdminSyncPanelProps {
   initialDate: string;
   homeGraphConfigured: boolean;
+  homeGraphError?: string | null;
 }
 
-export function AdminSyncPanel({ initialDate, homeGraphConfigured }: AdminSyncPanelProps) {
+export function AdminSyncPanel({
+  initialDate,
+  homeGraphConfigured,
+  homeGraphError,
+}: AdminSyncPanelProps) {
   const [testDate, setTestDate] = useState(initialDate);
   const [dateResult, setDateResult] = useState<DateCheckResult | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -127,7 +132,13 @@ export function AdminSyncPanel({ initialDate, homeGraphConfigured }: AdminSyncPa
 
         {!homeGraphConfigured && (
           <div className="alert alert-error">
-            Service Account env var missing (<code>GOOGLE_SERVICE_ACCOUNT_JSON</code>).
+            {homeGraphError ? (
+              homeGraphError
+            ) : (
+              <>
+                Service Account env var missing (<code>GOOGLE_SERVICE_ACCOUNT_JSON</code>).
+              </>
+            )}
           </div>
         )}
 

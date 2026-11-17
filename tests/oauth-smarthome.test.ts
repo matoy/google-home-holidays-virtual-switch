@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { evaluateScheduleFromIcs } from "../src/lib/holidays";
+import { getHomeGraphConfigStatus, getServiceAccountCredentials } from "../src/lib/homegraph";
 import {
   createAccessAndRefreshTokens,
   createAuthorizationCode,
@@ -188,4 +189,51 @@ test("Smart Home intents SYNC, QUERY, EXECUTE, and DISCONNECT adhere to Google s
     inputs: [{ intent: "action.devices.DISCONNECT" }],
   });
   assert.deepEqual(disconnectRes, {});
+});
+
+test("HomeGraph Service Account parser validates Service Account JSON and rejects OAuth Client JSON", () => {
+  const prevJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const prevEmail = process.env.GOOGLE_CLIENT_EMAIL;
+  const prevKey = process.env.GOOGLE_PRIVATE_KEY;
+
+  try {
+    delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    delete process.env.GOOGLE_CLIENT_EMAIL;
+    delete process.env.GOOGLE_PRIVATE_KEY;
+
+    assert.deepEqual(getHomeGraphConfigStatus(), { configured: false, error: null });
+
+    // OAuth Client ID ("installed") JSON must report a helpful error
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      installed: { client_id: "123.apps.googleusercontent.com", client_secret: "secret" },
+    });
+    const oauthJsonStatus = getHomeGraphConfigStatus();
+    assert.equal(oauthJsonStatus.configured, false);
+    assert.ok(oauthJsonStatus.error?.includes("OAuth Client ID JSON"));
+
+    // Valid single-line Service Account JSON
+    const validSa = JSON.stringify({
+      type: "service_account",
+      client_email: "homegraph@proj.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----\\nABC\\n-----END PRIVATE KEY-----\\n",
+    });
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = validSa;
+    assert.deepEqual(getHomeGraphConfigStatus(), { configured: true, error: null });
+    assert.equal(
+      getServiceAccountCredentials()?.clientEmail,
+      "homegraph@proj.iam.gserviceaccount.com",
+    );
+    assert.ok(getServiceAccountCredentials()?.privateKey.includes("\nABC\n"));
+
+    // Valid base64-encoded Service Account JSON
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON = Buffer.from(validSa, "utf8").toString("base64");
+    assert.deepEqual(getHomeGraphConfigStatus(), { configured: true, error: null });
+  } finally {
+    if (prevJson === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    else process.env.GOOGLE_SERVICE_ACCOUNT_JSON = prevJson;
+    if (prevEmail === undefined) delete process.env.GOOGLE_CLIENT_EMAIL;
+    else process.env.GOOGLE_CLIENT_EMAIL = prevEmail;
+    if (prevKey === undefined) delete process.env.GOOGLE_PRIVATE_KEY;
+    else process.env.GOOGLE_PRIVATE_KEY = prevKey;
+  }
 });

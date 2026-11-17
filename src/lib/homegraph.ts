@@ -21,17 +21,46 @@ let cachedAccessToken: CachedGoogleToken | null = null;
 export function getServiceAccountCredentials(): ServiceAccountCredentials | null {
   const rawJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
   if (rawJson) {
-    let jsonText = rawJson;
-    if (!jsonText.startsWith("{")) {
-      jsonText = Buffer.from(rawJson, "base64").toString("utf8");
+    let normalized = rawJson;
+    if (
+      (normalized.startsWith("'") && normalized.endsWith("'")) ||
+      (normalized.startsWith('"') && normalized.endsWith('"'))
+    ) {
+      normalized = normalized.slice(1, -1).trim();
     }
-    const parsed = JSON.parse(jsonText) as {
+
+    let jsonText = normalized;
+    if (!jsonText.startsWith("{")) {
+      jsonText = Buffer.from(normalized, "base64").toString("utf8");
+    }
+
+    let parsed: {
+      type?: string;
       client_email?: string;
       private_key?: string;
+      installed?: unknown;
+      web?: unknown;
     };
-    if (!parsed.client_email || !parsed.private_key) {
-      throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key");
+    try {
+      parsed = JSON.parse(jsonText) as typeof parsed;
+    } catch {
+      throw new Error(
+        "GOOGLE_SERVICE_ACCOUNT_JSON is not valid single-line JSON or base64-encoded JSON.",
+      );
     }
+
+    if (parsed.installed || parsed.web) {
+      throw new Error(
+        "GOOGLE_SERVICE_ACCOUNT_JSON contains an OAuth Client ID JSON (installed/web), not a Service Account key. Create a Service Account key under Google Cloud Console → IAM & Admin → Service Accounts.",
+      );
+    }
+
+    if (!parsed.client_email || !parsed.private_key) {
+      throw new Error(
+        'GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key (expected a Service Account key JSON with "type": "service_account").',
+      );
+    }
+
     return {
       clientEmail: parsed.client_email,
       privateKey: parsed.private_key.replace(/\\n/g, "\n"),
@@ -50,12 +79,22 @@ export function getServiceAccountCredentials(): ServiceAccountCredentials | null
   return null;
 }
 
-export function isHomeGraphConfigured(): boolean {
+export function getHomeGraphConfigStatus(): { configured: boolean; error: string | null } {
   try {
-    return getServiceAccountCredentials() !== null;
-  } catch {
-    return false;
+    return {
+      configured: getServiceAccountCredentials() !== null,
+      error: null,
+    };
+  } catch (err) {
+    return {
+      configured: false,
+      error: err instanceof Error ? err.message : "Invalid HomeGraph Service Account configuration.",
+    };
   }
+}
+
+export function isHomeGraphConfigured(): boolean {
+  return getHomeGraphConfigStatus().configured;
 }
 
 function createServiceAccountJwt(creds: ServiceAccountCredentials): string {

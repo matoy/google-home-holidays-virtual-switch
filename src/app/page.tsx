@@ -2,14 +2,15 @@ import { AdminSyncPanel } from "@/components/AdminSyncPanel";
 import { getAppConfig } from "@/lib/config";
 import { addDaysYmd, compareYmd, formatHumanDate } from "@/lib/date";
 import { getHolidayScheduleSnapshot } from "@/lib/holidays";
-import { isHomeGraphConfigured } from "@/lib/homegraph";
+import { getHomeGraphConfigStatus } from "@/lib/homegraph";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const config = getAppConfig();
-  const homeGraphConfigured = isHomeGraphConfigured();
+  const homeGraphStatus = getHomeGraphConfigStatus();
+  const homeGraphConfigured = homeGraphStatus.configured;
 
   let snapshot: Awaited<ReturnType<typeof getHolidayScheduleSnapshot>> | null = null;
   let loadError: string | null = null;
@@ -36,7 +37,12 @@ export default async function HomePage() {
         <span
           className={`pill pill-sm ${homeGraphConfigured ? "pill-on" : "pill-warn"}`}
         >
-          HomeGraph: {homeGraphConfigured ? "Configured" : "Not configured"}
+          HomeGraph:{" "}
+          {homeGraphConfigured
+            ? "Configured"
+            : homeGraphStatus.error
+              ? "Invalid config"
+              : "Not configured"}
         </span>
       </header>
 
@@ -95,6 +101,7 @@ export default async function HomePage() {
           <AdminSyncPanel
             initialDate={snapshot.parisNow.date}
             homeGraphConfigured={homeGraphConfigured}
+            homeGraphError={homeGraphStatus.error}
           />
 
           <section className="card">
