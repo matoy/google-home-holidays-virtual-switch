@@ -165,9 +165,8 @@ export default async function HomePage() {
                         <td>
                           {isCurrent ? (
                             <span
-                              className={`pill pill-sm ${
-                                snapshot.current.isOn ? "pill-on" : "pill-off"
-                              }`}
+                              className={`pill pill-sm ${snapshot.current.isOn ? "pill-on" : "pill-off"
+                                }`}
                             >
                               Active now ({snapshot.current.isOn ? "ON" : "OFF"})
                             </span>
@@ -199,7 +198,7 @@ export default async function HomePage() {
                 <code>/api/smarthome</code>
               </div>
               <div className="meta-row">
-                <span className="muted">Daily Schedule (02:00 Europe/Paris)</span>
+                <span className="muted">Daily Schedule (03:00 Europe/Paris)</span>
                 <code>/api/cron</code>
               </div>
               <div className="meta-row">
