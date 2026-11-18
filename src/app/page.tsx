@@ -199,7 +199,7 @@ export default async function HomePage() {
                 <code>/api/smarthome</code>
               </div>
               <div className="meta-row">
-                <span className="muted">Daily Cron / Report State</span>
+                <span className="muted">Daily Schedule (02:00 Europe/Paris)</span>
                 <code>/api/cron</code>
               </div>
               <div className="meta-row">

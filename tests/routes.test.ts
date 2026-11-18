@@ -5,7 +5,7 @@ import { POST as adminLoginPost } from "../src/app/api/admin/login/route";
 import { POST as adminLogoutPost } from "../src/app/api/admin/logout/route";
 import { POST as adminSwitchPost } from "../src/app/api/admin/switch/route";
 import { POST as adminSyncPost } from "../src/app/api/admin/sync/route";
-import { GET as cronGet } from "../src/app/api/cron/route";
+import { GET as cronGet, POST as cronPost } from "../src/app/api/cron/route";
 import { POST as authorizePost } from "../src/app/api/oauth/authorize/route";
 import { POST as tokenPost } from "../src/app/api/oauth/token/route";
 import { POST as smarthomePost } from "../src/app/api/smarthome/route";
@@ -249,6 +249,16 @@ test("Status, Cron, and Admin routes validate inputs and auth", async () => {
     const cronJson = (await cronAuth.json()) as { ok: boolean; homeGraphConfigured: boolean };
     assert.equal(cronJson.ok, true);
     assert.equal(cronJson.homeGraphConfigured, false);
+
+    const cronPostAuth = await cronPost(
+      new NextRequest("https://app.example.com/api/cron", {
+        method: "POST",
+        headers: { Authorization: "Bearer route-cron-secret-1234" },
+      }),
+    );
+    assert.equal(cronPostAuth.status, 200);
+    const cronPostJson = (await cronPostAuth.json()) as { ok: boolean };
+    assert.equal(cronPostJson.ok, true);
   });
 
   const adminBadPwd = await adminSyncPost(

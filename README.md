@@ -17,7 +17,7 @@ Evaluated in the **`Europe/Paris`** timezone (`00:00` boundary):
 - `/oauth/authorize` — Single-user OAuth 2.0 authorization page for Google Home account linking.
 - `/api/oauth/token` — OAuth 2.0 token exchange (`authorization_code` and `refresh_token`).
 - `/api/smarthome` — Google Home Cloud-to-cloud Fulfillment (`SYNC`, `QUERY`, `EXECUTE`, `DISCONNECT`).
-- `/api/cron` — Scheduled daily check (`5 0 * * *` UTC in `vercel.json`) that clears any temporary test override and calls HomeGraph `reportStateAndNotification` whenever the state transitions.
+- `/api/cron` — Target for the daily **Vercel Schedule** (`0 2 * * *` `Europe/Paris`, 15-minute jitter in `vercel.json`) that clears any temporary test override and calls HomeGraph `reportStateAndNotification` whenever the state transitions.
 - `/api/status` — Public JSON status (`?date=YYYY-MM-DD` optional).
 - `/api/admin/login`, `/api/admin/logout` — `ADMIN_PASSWORD` session cookie login/logout for the dashboard.
 - `/api/admin/switch` — Authenticated endpoint to force the virtual switch `on`, `off`, or reset back to `auto` (Zone C calendar) and push the state to HomeGraph.
@@ -120,7 +120,7 @@ node -e "const c = require('crypto'); for (const [k, n] of [['GOOGLE_CLIENT_ID',
 ### 6. Using the Switch in Google Home Automations
 
 - Because `willReportState` is `true` on a standard `SWITCH` (`queryOnlyOnOff: false`), the Google Home mobile tile opens cleanly without crashing and you can use the switch as a **Starter** (when it turns ON or OFF) or a **Condition** in Google Home Automations / the [Google Home Script Editor](https://home.google.com/). Any manual tap on the tile (`EXECUTE`) automatically returns the authoritative Zone C calendar (or test override) state so it stays in sync.
-- **Vercel Hobby Cron timing note:** Vercel Hobby runs `5 0 * * *` (`00:05 UTC`) within a ~1-hour window (`01:05–02:05` CET / `02:05–03:05` CEST). If you want state transitions pushed right at `00:01 Europe/Paris`, configure a free external scheduler (e.g. GitHub Actions or cron-job.org) to `GET https://your-app.vercel.app/api/cron` with header `Authorization: Bearer <CRON_SECRET>`.
+- **Vercel Schedule timing note:** [vercel.json](vercel.json) uses **Vercel Schedules** at `0 2 * * *` in `Europe/Paris` with `jitter: 15` (the maximum allowed by Vercel Schedules and fixed on the Hobby plan — so it runs between `02:00` and `02:15` Paris time). If you want state transitions pushed right at `00:01 Europe/Paris`, you can also trigger `POST` or `GET https://your-app.vercel.app/api/cron` with header `Authorization: Bearer <CRON_SECRET>` from an external scheduler.
 
 ---
 

@@ -1,9 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [
-    {
+  "schedules": {
+    "daily-holiday-sync": {
       "path": "/api/cron",
-      "schedule": "5 0 * * *"
+      "schedule": "0 3 * * *",
+      "timezone": "Europe/Paris",
+      "jitter": 15,
+      "requestMethod": "POST"
     }
-  ]
+  }
 }
