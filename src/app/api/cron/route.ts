@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 async function handleCron(request: NextRequest) {
   const config = getAppConfig();
   if (!config.cronSecret) {
+    console.error("[schedule] CRON_SECRET is not configured");
     return NextResponse.json(
       { error: "CRON_SECRET is not configured" },
       { status: 500 },
@@ -20,16 +21,26 @@ async function handleCron(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
   const expectedHeader = `Bearer ${config.cronSecret}`;
   if (!constantTimeEquals(authHeader, expectedHeader)) {
+    console.warn("[schedule] Rejected unauthorized invocation");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const forceParam = request.nextUrl.searchParams.get("force");
   const force = forceParam === "1" || forceParam === "true";
+  const cronScheduleHeader = request.headers.get("x-vercel-cron-schedule") || "manual";
 
-  const [snapshot, clearedOverride] = await Promise.all([
-    getHolidayScheduleSnapshot({ forceRefresh: true }),
-    clearSwitchOverride(),
-  ]);
+  let snapshot: Awaited<ReturnType<typeof getHolidayScheduleSnapshot>>;
+  let clearedOverride: Awaited<ReturnType<typeof clearSwitchOverride>>;
+  try {
+    [snapshot, clearedOverride] = await Promise.all([
+      getHolidayScheduleSnapshot({ forceRefresh: true }),
+      clearSwitchOverride(),
+    ]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[schedule] Failed to evaluate Zone-C schedule:", message);
+    return NextResponse.json({ ok: false, error: message }, { status: 502 });
+  }
 
   const changedFromYesterday = snapshot.current.isOn !== snapshot.yesterday.isOn;
   const changedFromOverride =
@@ -49,6 +60,16 @@ async function handleCron(request: NextRequest) {
         reportRequestId = res.requestId;
       } catch (err) {
         reportError = err instanceof Error ? err.message : String(err);
+        console.error(
+          "[schedule] HomeGraph reportStateAndNotification failed:",
+          JSON.stringify({
+            date: snapshot.current.date,
+            isOn: snapshot.current.isOn,
+            changed,
+            force,
+            error: reportError,
+          }),
+        );
         return NextResponse.json(
           {
             ok: false,
@@ -69,6 +90,25 @@ async function handleCron(request: NextRequest) {
       reportError = "HomeGraph Service Account is not configured";
     }
   }
+
+  console.info(
+    "[schedule] Executed",
+    JSON.stringify({
+      trigger: cronScheduleHeader,
+      parisNow: snapshot.parisNow,
+      isOn: snapshot.current.isOn,
+      yesterdayIsOn: snapshot.yesterday.isOn,
+      reason: snapshot.current.reason,
+      changed,
+      overrideCleared: clearedOverride !== null,
+      force,
+      homeGraphConfigured: homeGraphReady,
+      reported,
+      reportRequestId,
+      warning: reportError,
+      nextTransition: snapshot.nextTransition?.date ?? null,
+    }),
+  );
 
   return NextResponse.json(
     {
